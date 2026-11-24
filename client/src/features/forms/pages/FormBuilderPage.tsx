@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowLeft, Plus, Trash2, Save } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,14 +24,93 @@ import {
   useGetFormByIdQuery,
   useUpdateFormMutation,
 } from "../api/formsApi";
-import {
-  FIELD_TYPE_OPTIONS,
-  createDefaultField,
-} from "../constants/field.constants";
+import { FIELD_TYPE_OPTIONS, createDefaultField } from "../constants/field.constants";
 import FieldOptionsEditor from "../components/FieldOptionsEditor";
+import FieldDefaultValueEditor from "../components/FieldDefaultValueEditor";
 import FieldValidationEditor from "../components/FieldValidationEditor";
 import SortableField from "../components/SortableField";
 import type { FormField, FormFieldType } from "../types/form.types";
+
+const isValidDate = (value: string) => {
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  return (
+    datePattern.test(value) &&
+    !Number.isNaN(date.getTime()) &&
+    date.toISOString().slice(0, 10) === value
+  );
+};
+
+const getDefaultValueError = (field: FormField): string | undefined => {
+  const value = field.defaultValue;
+
+  if (
+    value === undefined ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0)
+  ) {
+    return undefined;
+  }
+
+  const optionValues = new Set((field.options ?? []).map((option) => option.value));
+
+  if (field.type === "SELECT" || field.type === "RADIO") {
+    return typeof value === "string" && optionValues.has(value)
+      ? undefined
+      : `Default value for "${field.label}" must be one of its options.`;
+  }
+
+  if (field.type === "CHECKBOX") {
+    return Array.isArray(value) &&
+      value.every((item) => typeof item === "string" && optionValues.has(item)) &&
+      new Set(value).size === value.length
+      ? undefined
+      : `Default selections for "${field.label}" must be unique configured options.`;
+  }
+
+  if (field.type === "NUMBER") {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return `Default value for "${field.label}" must be a number.`;
+    }
+
+    if (
+      (field.validations?.min !== undefined && value < field.validations.min) ||
+      (field.validations?.max !== undefined && value > field.validations.max)
+    ) {
+      return `Default value for "${field.label}" must meet its number validation rules.`;
+    }
+
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    return `Default value for "${field.label}" must be text.`;
+  }
+
+  if (field.type === "DATE" && !isValidDate(value)) {
+    return `Default value for "${field.label}" must be a valid date.`;
+  }
+
+  if (
+    (field.validations?.minLength !== undefined &&
+      value.trim().length < field.validations.minLength) ||
+    (field.validations?.maxLength !== undefined &&
+      value.trim().length > field.validations.maxLength) ||
+    (field.validations?.pattern &&
+      !new RegExp(field.validations.pattern).test(value.trim()))
+  ) {
+    return `Default value for "${field.label}" must meet its text validation rules.`;
+  }
+
+  if (field.type === "EMAIL" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+    return `Default value for "${field.label}" must be a valid email address.`;
+  }
+
+  if (field.type === "PHONE" && !/^(?=.*\d)\+?[0-9\s()-]{7,20}$/.test(value.trim())) {
+    return `Default value for "${field.label}" must be a valid phone number.`;
+  }
+};
 
 const FormBuilderPage = () => {
   const navigate = useNavigate();
@@ -50,22 +129,20 @@ const FormBuilderPage = () => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [fields, setFields] = useState<FormField[]>([]);
+  const [loadedFormResponse, setLoadedFormResponse] = useState(existingFormResponse);
+
+  if (existingFormResponse !== loadedFormResponse && existingFormResponse?.data) {
+    setLoadedFormResponse(existingFormResponse);
+    setName(existingFormResponse.data.name);
+    setDescription(existingFormResponse.data.description ?? "");
+    setFields(existingFormResponse.data.fields);
+  }
 
   const [createForm, { isLoading: isCreating }] = useCreateFormMutation();
 
   const [updateForm, { isLoading: isUpdating }] = useUpdateFormMutation();
 
   const isSaving = isCreating || isUpdating;
-
-  useEffect(() => {
-    const form = existingFormResponse?.data;
-
-    if (!form) return;
-
-    setName(form.name);
-    setDescription(form.description ?? "");
-    setFields(form.fields);
-  }, [existingFormResponse]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -79,17 +156,12 @@ const FormBuilderPage = () => {
   );
 
   const addField = () => {
-    setFields((current) => [
-      ...current,
-      createDefaultField(current.length) as FormField,
-    ]);
+    setFields((current) => [...current, createDefaultField(current.length) as FormField]);
   };
 
   const updateField = (id: string, updates: Partial<FormField>) => {
     setFields((current) =>
-      current.map((field) =>
-        field.id === id ? { ...field, ...updates } : field,
-      ),
+      current.map((field) => (field.id === id ? { ...field, ...updates } : field)),
     );
   };
 
@@ -104,6 +176,7 @@ const FormBuilderPage = () => {
         return {
           ...field,
           type,
+          defaultValue: undefined,
           options: supportsOptions
             ? field.options?.length
               ? field.options
@@ -113,6 +186,36 @@ const FormBuilderPage = () => {
                 ]
             : undefined,
         };
+      }),
+    );
+  };
+
+  const updateFieldOptions = (id: string, options: FormField["options"]) => {
+    setFields((current) =>
+      current.map((field) => {
+        if (field.id !== id) return field;
+
+        const optionValues = new Set((options ?? []).map((option) => option.value));
+        let defaultValue = field.defaultValue;
+
+        if (
+          (field.type === "SELECT" || field.type === "RADIO") &&
+          (typeof defaultValue !== "string" || !optionValues.has(defaultValue))
+        ) {
+          defaultValue = undefined;
+        }
+
+        if (field.type === "CHECKBOX") {
+          const selectedValues = Array.isArray(defaultValue)
+            ? defaultValue.filter(
+                (value): value is string =>
+                  typeof value === "string" && optionValues.has(value),
+              )
+            : [];
+          defaultValue = selectedValues.length > 0 ? selectedValues : undefined;
+        }
+
+        return { ...field, options, defaultValue };
       }),
     );
   };
@@ -185,18 +288,12 @@ const FormBuilderPage = () => {
     for (const field of optionFields) {
       const options = field.options ?? [];
 
-      if (
-        options.length === 0 ||
-        options.some((option) => !option.value.trim())
-      ) {
+      if (options.length === 0 || options.some((option) => !option.value.trim())) {
         window.alert(`Please provide valid options for "${field.label}".`);
         return;
       }
 
-      if (
-        new Set(options.map((option) => option.value.trim())).size !==
-        options.length
-      ) {
+      if (new Set(options.map((option) => option.value.trim())).size !== options.length) {
         window.alert(`Duplicate options found in "${field.label}".`);
         return;
       }
@@ -210,20 +307,12 @@ const FormBuilderPage = () => {
         rules.maxLength !== undefined &&
         rules.minLength > rules.maxLength
       ) {
-        window.alert(
-          `Minimum length cannot exceed maximum length in "${field.label}".`,
-        );
+        window.alert(`Minimum length cannot exceed maximum length in "${field.label}".`);
         return;
       }
 
-      if (
-        rules?.min !== undefined &&
-        rules.max !== undefined &&
-        rules.min > rules.max
-      ) {
-        window.alert(
-          `Minimum value cannot exceed maximum value in "${field.label}".`,
-        );
+      if (rules?.min !== undefined && rules.max !== undefined && rules.min > rules.max) {
+        window.alert(`Minimum value cannot exceed maximum value in "${field.label}".`);
         return;
       }
 
@@ -234,6 +323,12 @@ const FormBuilderPage = () => {
           window.alert(`Invalid regex pattern in "${field.label}".`);
           return;
         }
+      }
+
+      const defaultValueError = getDefaultValueError(field);
+      if (defaultValueError) {
+        window.alert(defaultValueError);
+        return;
       }
     }
 
@@ -257,9 +352,7 @@ const FormBuilderPage = () => {
 
       navigate("/forms");
       toast.success(
-        isEditMode
-          ? "Form updated successfully"
-          : "Form created successfully",
+        isEditMode ? "Form updated successfully" : "Form created successfully",
       );
     } catch {
       toast.error("Unable to save the form. Please try again.");
@@ -273,9 +366,7 @@ const FormBuilderPage = () => {
   if (isEditMode && (isFormError || !existingFormResponse?.data)) {
     return (
       <div className="p-6">
-        <p className="text-red-600">
-          Unable to load this form. Please try again.
-        </p>
+        <p className="text-red-600">Unable to load this form. Please try again.</p>
       </div>
     );
   }
@@ -292,9 +383,7 @@ const FormBuilderPage = () => {
         </Link>
 
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Create a form
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Create a form</h1>
           <p className="mt-1 text-sm text-gray-500">
             Configure your form and add the fields you need.
           </p>
@@ -364,9 +453,7 @@ const FormBuilderPage = () => {
           {fields.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
               <Plus size={25} className="mx-auto text-gray-400" />
-              <h3 className="mt-3 font-semibold text-gray-800">
-                No fields added yet
-              </h3>
+              <h3 className="mt-3 font-semibold text-gray-800">No fields added yet</h3>
               <p className="mt-1 text-sm text-gray-500">
                 Start building your form by adding a field.
               </p>
@@ -392,141 +479,148 @@ const FormBuilderPage = () => {
                   {fields.map((field, index) => (
                     <SortableField key={field.id} id={field.id}>
                       <article className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-gray-700">
-                      Field {index + 1}
-                    </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-gray-700">
+                            Field {index + 1}
+                          </p>
 
-                    <button
-                      type="button"
-                      onClick={() => removeField(field.id)}
-                      aria-label={`Remove field ${index + 1}`}
-                      className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  </div>
+                          <button
+                            type="button"
+                            onClick={() => removeField(field.id)}
+                            aria-label={`Remove field ${index + 1}`}
+                            className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor={`label-${field.id}`}
-                        className="mb-2 block text-sm font-medium text-gray-700"
-                      >
-                        Field label *
-                      </label>
-                      <input
-                        id={`label-${field.id}`}
-                        required
-                        value={field.label}
-                        onChange={(event) =>
-                          updateField(field.id, {
-                            label: event.target.value,
-                          })
-                        }
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
-                      />
-                    </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label
+                              htmlFor={`label-${field.id}`}
+                              className="mb-2 block text-sm font-medium text-gray-700"
+                            >
+                              Field label *
+                            </label>
+                            <input
+                              id={`label-${field.id}`}
+                              required
+                              value={field.label}
+                              onChange={(event) =>
+                                updateField(field.id, {
+                                  label: event.target.value,
+                                })
+                              }
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+                            />
+                          </div>
 
-                    <div>
-                      <label
-                        htmlFor={`type-${field.id}`}
-                        className="mb-2 block text-sm font-medium text-gray-700"
-                      >
-                        Field type
-                      </label>
-                      <select
-                        id={`type-${field.id}`}
-                        value={field.type}
-                        onChange={(event) =>
-                          changeFieldType(
-                            field.id,
-                            event.target.value as FormFieldType,
-                          )
-                        }
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-500"
-                      >
-                        {FIELD_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                          <div>
+                            <label
+                              htmlFor={`type-${field.id}`}
+                              className="mb-2 block text-sm font-medium text-gray-700"
+                            >
+                              Field type
+                            </label>
+                            <select
+                              id={`type-${field.id}`}
+                              value={field.type}
+                              onChange={(event) =>
+                                changeFieldType(
+                                  field.id,
+                                  event.target.value as FormFieldType,
+                                )
+                              }
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+                            >
+                              {FIELD_TYPE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
 
-                  <div>
-                    <label
-                      htmlFor={`key-${field.id}`}
-                      className="mb-2 block text-sm font-medium text-gray-700"
-                    >
-                      Field key
-                    </label>
-                    <input
-                      id={`key-${field.id}`}
-                      required
-                      value={field.key}
-                      onChange={(event) =>
-                        updateField(field.id, {
-                          key: event.target.value
-                            .toLowerCase()
-                            .replace(/[^a-z0-9_]/g, "_"),
-                        })
-                      }
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
-                    />
-                    <p className="mt-1 text-xs text-gray-400">
-                      Unique identifier used when storing responses.
-                    </p>
-                  </div>
+                        <div>
+                          <label
+                            htmlFor={`key-${field.id}`}
+                            className="mb-2 block text-sm font-medium text-gray-700"
+                          >
+                            Field key
+                          </label>
+                          <input
+                            id={`key-${field.id}`}
+                            required
+                            value={field.key}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                key: event.target.value
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9_]/g, "_"),
+                              })
+                            }
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+                          />
+                          <p className="mt-1 text-xs text-gray-400">
+                            Unique identifier used when storing responses.
+                          </p>
+                        </div>
 
-                  <div>
-                    <label
-                      htmlFor={`placeholder-${field.id}`}
-                      className="mb-2 block text-sm font-medium text-gray-700"
-                    >
-                      Placeholder
-                    </label>
-                    <input
-                      id={`placeholder-${field.id}`}
-                      value={field.placeholder ?? ""}
-                      onChange={(event) =>
-                        updateField(field.id, {
-                          placeholder: event.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
-                      placeholder="Enter placeholder text"
-                    />
-                  </div>
+                        <div>
+                          <label
+                            htmlFor={`placeholder-${field.id}`}
+                            className="mb-2 block text-sm font-medium text-gray-700"
+                          >
+                            Placeholder
+                          </label>
+                          <input
+                            id={`placeholder-${field.id}`}
+                            value={field.placeholder ?? ""}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                placeholder: event.target.value,
+                              })
+                            }
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+                            placeholder="Enter placeholder text"
+                          />
+                        </div>
 
-                  {["SELECT", "RADIO", "CHECKBOX"].includes(field.type) && (
-                    <FieldOptionsEditor
-                      field={field}
-                      onChange={(options) => updateField(field.id, { options })}
-                    />
-                  )}
+                        {["SELECT", "RADIO", "CHECKBOX"].includes(field.type) && (
+                          <FieldOptionsEditor
+                            field={field}
+                            onChange={(options) => updateFieldOptions(field.id, options)}
+                          />
+                        )}
 
-                  <FieldValidationEditor
-                    field={field}
-                    onChange={(validations) =>
-                      updateField(field.id, { validations })
-                    }
-                  />
+                        <FieldDefaultValueEditor
+                          field={field}
+                          onChange={(defaultValue) =>
+                            updateField(field.id, { defaultValue })
+                          }
+                        />
 
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={field.required}
-                      onChange={(event) =>
-                        updateField(field.id, {
-                          required: event.target.checked,
-                        })
-                      }
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    Required field
-                  </label>
+                        <FieldValidationEditor
+                          field={field}
+                          onChange={(validations) =>
+                            updateField(field.id, { validations })
+                          }
+                        />
+
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                required: event.target.checked,
+                              })
+                            }
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                          Required field
+                        </label>
                       </article>
                     </SortableField>
                   ))}
@@ -550,11 +644,7 @@ const FormBuilderPage = () => {
             className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save size={16} />
-            {isSaving
-              ? "Saving..."
-              : isEditMode
-                ? "Update Form"
-                : "Save as draft"}
+            {isSaving ? "Saving..." : isEditMode ? "Update Form" : "Save as draft"}
           </button>
         </div>
       </form>

@@ -1,0 +1,82 @@
+{
+  "info": {
+    "name": "FormForge API",
+    "description": "Requests for the implemented FormForge API. Log in first: Postman stores the HTTP-only formforge_token cookie for subsequent admin requests on the same base URL.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "adminEmail", "value": "admin@example.com" },
+    { "key": "adminPassword", "value": "replace_with_your_admin_password" },
+    { "key": "formId", "value": "" },
+    { "key": "submissionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+            "url": "{{baseUrl}}/api/v1/auth/login"
+          }
+        },
+        { "name": "Current admin", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/auth/me" } },
+        { "name": "Logout", "request": { "method": "POST", "url": "{{baseUrl}}/api/v1/auth/logout" } }
+      ]
+    },
+    {
+      "name": "Forms (admin cookie required)",
+      "item": [
+        {
+          "name": "Create draft form",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Employee registration\",\n  \"description\": \"Collect employee details\",\n  \"fields\": [\n    {\n      \"id\": \"full-name\",\n      \"key\": \"full_name\",\n      \"label\": \"Full name\",\n      \"type\": \"TEXT\",\n      \"placeholder\": \"Enter your full name\",\n      \"defaultValue\": \"Jane Doe\",\n      \"required\": true,\n      \"order\": 0\n    },\n    {\n      \"id\": \"department\",\n      \"key\": \"department\",\n      \"label\": \"Department\",\n      \"type\": \"SELECT\",\n      \"defaultValue\": \"engineering\",\n      \"required\": true,\n      \"options\": [\n        { \"label\": \"Engineering\", \"value\": \"engineering\" },\n        { \"label\": \"Human Resources\", \"value\": \"hr\" }\n      ],\n      \"order\": 1\n    }\n  ]\n}" },
+            "url": "{{baseUrl}}/api/v1/forms"
+          }
+        },
+        { "name": "List forms", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/forms?page=1&limit=10&status=DRAFT&search=employee" } },
+        { "name": "Get form", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/forms/{{formId}}" } },
+        {
+          "name": "Update form",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated employee registration\"\n}" },
+            "url": "{{baseUrl}}/api/v1/forms/{{formId}}"
+          }
+        },
+        { "name": "Publish form", "request": { "method": "PATCH", "url": "{{baseUrl}}/api/v1/forms/{{formId}}/publish" } },
+        { "name": "Archive form", "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/forms/{{formId}}" } }
+      ]
+    },
+    {
+      "name": "Public forms",
+      "item": [
+        { "name": "Get published form", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/public/forms/{{formId}}" } },
+        {
+          "name": "Submit response",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"full_name\": \"Jane Doe\",\n  \"department\": \"engineering\"\n}" },
+            "url": "{{baseUrl}}/api/v1/submissions/{{formId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Submissions (admin cookie required)",
+      "item": [
+        { "name": "List submissions", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/submissions/{{formId}}?page=1&limit=10" } },
+        { "name": "Get submission", "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/submissions/{{formId}}/{{submissionId}}" } },
+        { "name": "Delete submission", "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/submissions/{{formId}}/{{submissionId}}" } }
+      ]
+    }
+  ]
+}

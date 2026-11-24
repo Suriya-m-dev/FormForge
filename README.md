@@ -1,309 +1,149 @@
-# FormForge – Dynamic Form Builder & Submission Management System
+# FormForge — Dynamic Form Builder & Submission Management System
 
-FormForge is a full-stack web application that allows administrators to create and manage dynamic forms, publish them for public access, and manage submitted responses through an administrative dashboard.
+FormForge is a full-stack technical-assessment project for creating dynamic forms, publishing public versions, and managing responses.
+
+Repository: [github.com/Suriya-m-dev/FormForge](https://github.com/Suriya-m-dev/FormForge)
 
 ## Features
 
-### Authentication & Authorization
-- Admin login and logout.
-- JWT-based authentication using HTTP-only cookies.
-- Protected administrative routes.
-- Password hashing using bcrypt.
+- Cookie-authenticated admin login, protected routes, and bcrypt password hashing.
+- Draft, published, and archived forms with create, edit, publish, archive, and drag-to-reorder flows.
+- Nine field types: `TEXT`, `EMAIL`, `NUMBER`, `PHONE`, `TEXTAREA`, `DATE`, `SELECT`, `RADIO`, and `CHECKBOX`.
+- Field labels, keys, placeholders, required state, options, validation rules, and type-appropriate default values.
+- Public forms dynamically rendered from published snapshots, with loading, error, and success states.
+- Public validation plus paginated submission list, detail, and deletion views for administrators.
 
-### Form Management
-- Create, view, edit and archive forms.
-- Publish forms and manage Draft, Published and Archived statuses.
-- Configure form name and description.
-- Add, edit, delete and reorder dynamic fields.
+## Stack
 
-### Dynamic Form Builder
-
-Supports nine field types:
-- Text
-- Email
-- Number
-- Phone
-- Textarea
-- Date
-- Select
-- Radio
-- Checkbox
-
-Field configuration:
-- Labels and unique keys.
-- Placeholders and default values.
-- Required field settings.
-- Select, radio and checkbox options.
-- Field validation rules.
-
-### Public Form Submission
-- Publicly accessible published forms.
-- Dynamic rendering based on backend form definitions.
-- Server-side validation against published form definitions.
-- Submission success and error handling.
-
-### Submission Management
-- Paginated submission listing.
-- Individual submission details.
-- Submission deletion.
-
-### Dashboard
-- Total form statistics.
-- Published, draft and archived form counts.
-- Recently created forms.
-
-## Technology Stack
-
-| Frontend | Backend |
-|---|---|
-| React | Node.js |
-| TypeScript | Express.js |
-| Vite | TypeScript |
-| Tailwind CSS v4 | MongoDB |
-| Redux Toolkit | Mongoose |
-| RTK Query | Zod |
-| React Router | JWT |
-| React Hook Form | bcrypt |
-| Zod | Helmet |
-| dnd-kit | Pino Logger |
-| Sonner | Vitest |
-| Lucide React | |
+| Area | Technologies |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4 |
+| State and data | Redux Toolkit, RTK Query, React Hook Form, Zod |
+| Backend | Node.js, Express 5, TypeScript |
+| Database | MongoDB, Mongoose |
+| Security and logging | JWT, bcrypt, HTTP-only cookies, Helmet, CORS, express-rate-limit, Pino |
+| Tests | Vitest, Supertest, mongodb-memory-server |
 
 ## Architecture
 
-### Frontend
+The frontend is feature-oriented: `auth`, `dashboard`, `forms`, and `submissions` live under `client/src/features`; shared UI and layout are in `components`. `app/baseApi.ts` owns one RTK Query API slice, into which feature endpoints are injected. RTK Query manages server state—fetching, cached results, mutations, and tag invalidation—while builder input, drag state, modal state, and public-form values remain local component state.
 
-Feature-based architecture:
+The backend is layered:
 
-```text
-client/
-└── src/
-    ├── app/
-    ├── components/
-    │   ├── common/
-    │   ├── layout/
-    │   └── ui/
-    ├── features/
-    │   ├── auth/
-    │   ├── dashboard/
-    │   ├── forms/
-    │   └── submissions/
-    ├── lib/
-    ├── routes/
-    ├── index.css
-    └── main.tsx
-```
-
-### Backend
-
-Layered architecture:
+`routes → middleware → controller → service → repository → Mongoose model`
 
 ```text
-server/
-└── src/
-    ├── config/
-    ├── middlewares/
-    ├── modules/
-    │   ├── auth/
-    │   ├── forms/
-    │   └── submissions/
-    ├── routes/
-    ├── utils/
-    ├── app.ts
-    └── server.ts
+client/src/
+  app/ components/ features/ routes/
+server/src/
+  config/ middlewares/ modules/ routes/
 ```
 
-Request flow:
+Fields are embedded in their form document. Publishing writes a versioned snapshot; a submission records that form version and snapshot alongside validated response data. Later field edits therefore do not rewrite historical submissions.
 
-`Routes → Middleware → Controller → Service → Repository → Model`
+## Setup
 
-## Application Design
-
-- Form fields are stored within their corresponding form documents.
-- Published forms use immutable snapshots of their published definitions.
-- Public forms are rendered using the published backend definition.
-- Submissions are stored separately from form documents.
-- Each submission retains its relevant form version and snapshot information.
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js
-- npm
-- MongoDB
-
-### 1. Clone the Repository
+Prerequisites: Node.js, npm, and MongoDB.
 
 ```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-cd formforge
-```
+git clone https://github.com/Suriya-m-dev/FormForge.git
+cd FormForge
 
-Replace `YOUR_GITHUB_REPOSITORY_URL` with your actual repository URL.
-
-### 2. Backend Setup
-
-```bash
 cd server
 npm install
-```
-
-Create a `.env` file using `.env.example` as a reference.
-
-```env
-NODE_ENV=development
-PORT=5000
-LOG_LEVEL=debug
-
-CLIENT_URL=http://localhost:5173
-
-MONGODB_URI=mongodb://127.0.0.1:27017/formforge
-
-JWT_SECRET=your_secure_random_jwt_secret
-JWT_EXPIRES_IN=1d
-
-COOKIE_SECRET=your_secure_random_cookie_secret
-```
-
-Generate strong random values for `JWT_SECRET` and `COOKIE_SECRET`. Never use example placeholders as production secrets.
-
-Start the backend:
-
-```bash
+copy .env.example .env
 npm run dev
 ```
 
-Backend URL: `http://localhost:5000`
-
-### Create the Initial Admin Account
-
-Before creating the admin account, add these variables to `server/.env`:
-
-```env
-ADMIN_NAME=Admin
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=replace_with_a_secure_password_at_least_12_characters
-```
-
-Run the following command from the `server` directory:
-
-```bash
-npm run seed:admin
-```
-
-The seed script hashes the password before storing it. If an admin account with the configured email already exists, no changes are made.
-
-Use your configured admin email and password to log in. Never commit actual credentials to Git.
-
-### 3. Frontend Setup
-
-Open another terminal:
+In another terminal:
 
 ```bash
 cd client
 npm install
-```
-
-Create a `.env` file using `.env.example` as a reference.
-
-```env
-VITE_API_BASE_URL=http://localhost:5000/api/v1
-```
-
-Start the frontend:
-
-```bash
+copy .env.example .env
 npm run dev
 ```
 
-Frontend URL: `http://localhost:5173`
+Use `cp` instead of `copy` on macOS/Linux. Defaults are API `http://localhost:5000` and client `http://localhost:5173`.
 
-## API Overview
-
-Base URL: `/api/v1`
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/auth/login` | Admin login |
-| GET | `/auth/me` | Get authenticated admin |
-| POST | `/auth/logout` | Admin logout |
-| POST | `/forms` | Create form |
-| GET | `/forms` | List forms |
-| GET | `/forms/:id` | Get form details |
-| PUT | `/forms/:id` | Update form |
-| PATCH | `/forms/:id/publish` | Publish form |
-| DELETE | `/forms/:id` | Archive form |
-| GET | `/public/forms/:formId` | Get published public form |
-| POST | `/submissions/:formId` | Submit public form |
-| GET | `/submissions/:formId` | List submissions |
-| GET | `/submissions/:formId/:submissionId` | Get submission details |
-| DELETE | `/submissions/:formId/:submissionId` | Delete submission |
-
-Administrative endpoints require authentication. Public form retrieval and submission endpoints do not require admin authentication.
-
-## Security
-
-- Password hashing using bcrypt.
-- JWT authentication with HTTP-only cookies.
-- Protected administrative routes and role-based authorization.
-- Zod request validation.
-- Backend-side dynamic submission validation.
-- Rejection of unexpected submission fields.
-- API rate limiting.
-- Helmet security headers.
-- Configurable CORS.
-- Environment-based configuration.
-- Sensitive information redaction in logs.
-
-## Testing
-
-Backend tests use Vitest.
-
-Run backend tests:
+Create the initial administrator after setting the `ADMIN_*` values in `server/.env`:
 
 ```bash
+cd server
+npm run seed:admin
+```
+
+The seed script hashes the password and does nothing if the email already exists. Never commit `.env` files or production secrets.
+
+### Environment variables
+
+| File | Variables |
+| --- | --- |
+| `server/.env` | `NODE_ENV`, `PORT`, `LOG_LEVEL`, `CLIENT_URL`, `MONGODB_URI`, `JWT_SECRET` (32+ chars), `JWT_EXPIRES_IN`, `COOKIE_SECRET` (32+ chars), and seed-only `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| `client/.env` | `VITE_API_BASE_URL`, normally `http://localhost:5000/api/v1` |
+
+Use the included `server/.env.example` and `client/.env.example` templates as the source of exact local configuration.
+
+## Database design and pagination
+
+`Form` stores the owner, status, editable field definitions, version, and optional `publishedSnapshot`. `Submission` stores `formId`, `formVersion`, `formSnapshot`, normalized `data`, and `submittedAt`.
+
+Implemented indexes:
+
+- `Form`: `{ status: 1, createdAt: -1 }`
+- `Form`: `{ createdBy: 1, createdAt: -1 }`
+- `Submission`: `{ formId: 1, submittedAt: -1 }`
+
+Admin lists use newest-first offset pagination, with `page`, `limit`, `total`, and `totalPages`; `limit` is capped at 100. Form lists omit published snapshots and submission lists omit form snapshots, keeping list responses small.
+
+## Authentication and security
+
+Login verifies a bcrypt hash, signs a JWT, and sets an HTTP-only `formforge_token` cookie. It is secure in production and `SameSite=Lax`. Admin routes authenticate the cookie and require the `ADMIN` role; public form retrieval and submission are intentionally unauthenticated.
+
+The current API also uses Helmet, configured credentialed CORS, 1 MB request limits, Zod auth/form validation, submission validation against the published snapshot, rejection of unexpected submission fields, Pino logging, and rate limits. Limits are currently 200 API requests per 15 minutes and 10 login or public-submission requests per 15 minutes (disabled in tests).
+
+## API
+
+Base path: `/api/v1`. Admin routes require the login cookie.
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| GET | `/health` | Public | Health check |
+| POST | `/auth/login` | Public | Log in |
+| GET | `/auth/me` | Admin | Current admin |
+| POST | `/auth/logout` | Public | Clear auth cookie |
+| POST | `/forms` | Admin | Create draft |
+| GET | `/forms?page=1&limit=10&status=&search=` | Admin | List owned forms |
+| GET / PUT / DELETE | `/forms/:id` | Admin owner | Get / update / archive |
+| PATCH | `/forms/:id/publish` | Admin owner | Publish snapshot |
+| GET | `/public/forms/:formId` | Public | Get published form |
+| POST | `/submissions/:formId` | Public | Submit response |
+| GET | `/submissions/:formId?page=1&limit=10` | Admin owner | List submissions |
+| GET / DELETE | `/submissions/:formId/:submissionId` | Admin owner | Get / delete submission |
+
+Import [docs/FormForge.postman_collection.json](docs/FormForge.postman_collection.json) into Postman for representative bodies and variables. Log in first; Postman retains the HTTP-only cookie for requests to the same `baseUrl`.
+
+## Testing and production builds
+
+Run commands in their relevant package directories:
+
+```bash
+# server
 npm test
-```
-
-Run backend TypeScript checks:
-
-```bash
+npm run test:integration
 npm run typecheck
-```
+npm run build
 
-Create backend production build:
-
-```bash
+# client
+npm run typecheck
+npm run lint
 npm run build
 ```
 
-For the frontend:
+## Scaling: current baseline and future work
 
-```bash
-npm run typecheck
-npm run build
-```
+Implemented today: the indexes above, bounded offset pagination, list projections, request validation, and per-process rate limiting. These are a good baseline, not a claim that the current deployment alone handles 50,000+ forms, 10 million+ submissions, or high concurrent traffic.
 
-Run these commands from their respective `server` and `client` directories.
+For that scale, profile actual MongoDB query plans and add measured workload-specific compound indexes. Cursor/keyset pagination using stable `(submittedAt, _id)` is preferable for very deep submission lists because it avoids the rising scan cost of `skip`. Keep list projections small and fetch snapshots only where required.
 
-## Environment Configuration
-
-Environment files are excluded from Git.
-
-Configuration templates:
-- `client/.env.example`
-- `server/.env.example`
-
-Never commit actual credentials, JWT secrets or database connection strings.
-
-## Future Improvements
-
-- Redis-based caching.
-- Background processing for notifications.
-- Cursor-based pagination for larger datasets.
-- Advanced monitoring and application metrics.
-
----
-
-**FormForge – Dynamic Form Builder & Submission Management System**
+Future production infrastructure should run stateless API instances behind a load balancer; use shared Redis-backed rate-limit storage; move email, notifications, exports, and heavy work to durable background queues; and add log aggregation, metrics, tracing, alerts, database slow-query/index monitoring, backups, and load tests. Redis, queues, load balancing, monitoring infrastructure, and cursor pagination are proposals, not implemented features.
